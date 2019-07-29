@@ -1,4 +1,3 @@
--- https://github.com/ledgetech/lua-resty-http
 local skynet = require "skynet"
 local httpc = require "http.httpc"
 
@@ -10,7 +9,6 @@ local cjson = require "cjson.safe"
 local decode_json = cjson.decode
 local encode_json = cjson.encode
 
-local split = require "ngx.re".split
 local concat_tab = table.concat
 local tostring = tostring
 local select = select
@@ -150,7 +148,7 @@ local header = {
     ["Content-Type"] = "application/x-www-form-urlencoded",
 }
 
-local function _request(method, uri, opts, timeout)
+local function _request(host, method, uri, opts, timeout)
     local body
     if opts and opts.body and tab_nkeys(opts.body) > 0 then
         body = encode_args(opts.body)
@@ -162,7 +160,7 @@ local function _request(method, uri, opts, timeout)
 
     local recvheader = {}
     
-    local status, body = httpc.request(method, opts.host, uri, recvheader, header, body)
+    local status, body = httpc.request(method, host, uri, recvheader, header, body)
     if status >= 500 then
         return nil, "invalid response code: " .. status
     end
@@ -170,9 +168,9 @@ local function _request(method, uri, opts, timeout)
     if not typeof.string(body) then
         return body
     end
+
     return decode_json(body)
 end
-
 
 local function set(self, key, val, attr)
     local err
@@ -212,9 +210,11 @@ local function set(self, key, val, attr)
     end
 
     local res
-    res, err = _request(attr.in_order and 'POST' or 'PUT',
+    res, err = _request(self.endpoints.http_host,
+                        attr.in_order and 'POST' or 'PUT',
                         self.endpoints.full_prefix .. key,
-                        opts, self.timeout)
+                        opts, 
+                        self.timeout)
     if err then
         return nil, err
     end
@@ -229,7 +229,6 @@ local function set(self, key, val, attr)
 
     return res
 end
-
 
 local function decode_dir_value(body_node)
     if not body_node.dir then
@@ -256,7 +255,6 @@ local function decode_dir_value(body_node)
     return true
 end
 
-
 local function get(self, key, attr)
     local opts
     if attr then
@@ -280,9 +278,11 @@ local function get(self, key, attr)
         }
     end
 
-    local res, err = _request("GET", 
+    local res, err = _request(self.endpoints.http_host,
+                            "GET", 
                             self.endpoints.full_prefix .. normalize(key),
-                            opts, attr and attr.timeout or self.timeout)
+                            opts, 
+                            attr and attr.timeout or self.timeout)
     if err then
         return nil, err
     end
@@ -338,9 +338,11 @@ local function delete(self, key, attr)
     }
 
     -- todo: check arguments
-    return _request("DELETE",
+    return _request(self.endpoints.http_host,
+                    "DELETE",
                     self.endpoints.full_prefix .. normalize(key),
-                    opts, self.timeout)
+                    opts,
+                    self.timeout)
 end
 
 do
@@ -385,20 +387,20 @@ end
 
 -- /version
 function _M.version(self)
-    return _request('GET', self.endpoints.version, nil, self.timeout)
+    return _request(self.endpoints.http_host, 'GET', self.endpoints.version, nil, self.timeout)
 end
 
 -- /stats
 function _M.stats_leader(self)
-    return _request('GET', self.endpoints.stats_leader, nil, self.timeout)
+    return _request(self.endpoints.http_host, 'GET', self.endpoints.stats_leader, nil, self.timeout)
 end
 
 function _M.stats_self(self)
-    return _request('GET', self.endpoints.stats_self, nil, self.timeout)
+    return _request(self.endpoints.http_host, 'GET', self.endpoints.stats_self, nil, self.timeout)
 end
 
 function _M.stats_store(self)
-    return _request('GET', self.endpoints.stats_store, nil, self.timeout)
+    return _request(self.endpoints.http_host, 'GET', self.endpoints.stats_store, nil, self.timeout)
 end
 
 end -- do
