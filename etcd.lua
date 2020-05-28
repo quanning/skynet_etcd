@@ -15,6 +15,7 @@ local select = select
 local ipairs = ipairs
 local type = type
 local error = error
+local tointeger = math.tointeger
 
 
 local _M = {}
@@ -157,19 +158,32 @@ local function _request(host, method, uri, opts, timeout)
     if opts and opts.query and tab_nkeys(opts.query) > 0 then
         uri = uri .. '?' .. encode_args(opts.query)
     end
-
+ 
     local recvheader = {}
-    
-    local status, body = httpc.request(method, host, uri, recvheader, header, body)
+    local res = {}
+
+    -- dump({header=header, method=method, host=host, 
+    --     uri=uri, body=body}, "======= httpc.request ======")
+
+    local status, body, retheader = httpc.request(method, host, uri, recvheader, header, body)
     if status >= 500 then
         return nil, "invalid response code: " .. status
     end
 
+    res.status = status
+    res.header = retheader
+
     if not typeof.string(body) then
-        return body
+        res.body = body
+    else
+        local err
+        res.body, err = decode_json(body)
+        if err then
+            return nil, err
+        end
     end
 
-    return decode_json(body)
+    return res
 end
 
 local function set(self, key, val, attr)
@@ -242,10 +256,11 @@ local function decode_dir_value(body_node)
     local err
     for _, node in ipairs(body_node.nodes) do
         local val = node.value
-        if type(val) == "string" then
+        if typeof.string(val) then
             node.value, err = decode_json(val)
             if err then
-                error("failed to decode node[" .. node.key .. "] value: " .. err)
+                node.value = val
+                -- error("failed to decode node[" .. node.key .. "] value: " .. err)
             end
         end
 
@@ -297,7 +312,7 @@ local function get(self, key, attr)
     if res.status == 200 and res.body.node then
         if not decode_dir_value(res.body.node) then
             local val = res.body.node.value
-            if type(val) == "string" then
+            if typeof.string(val) then
                 res.body.node.value, err = decode_json(val)
                 if err then
                     return nil, err
@@ -359,8 +374,8 @@ end
 function _M.wait(self, key, modified_index, timeout)
     clear_tab(attr)
     attr.wait = true
-    attr.wait_index = modified_index
-    attr.timeout = timeout
+    attr.wait_index = tointeger(modified_index)
+    attr.timeout = tointeger(timeout)
 
     return get(self, key, attr)
 end
@@ -379,8 +394,8 @@ function _M.waitdir(self, key, modified_index, timeout)
     attr.wait = true
     attr.dir = true
     attr.recursive = true
-    attr.wait_index = modified_index
-    attr.timeout = timeout
+    attr.wait_index = tointeger(modified_index)
+    attr.timeout = tointeger(timeout)
 
     return get(self, key, attr)
 end
@@ -410,7 +425,7 @@ do
     local attr = {}
 function _M.set(self, key, val, ttl)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
 
     return set(self, key, val, attr)
 end
@@ -418,7 +433,7 @@ end
 -- set key-val and ttl if key does not exists (atomic create)
 function _M.setnx(self, key, val, ttl)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
     attr.prev_exist = false
 
     return set(self, key, val, attr)
@@ -427,9 +442,9 @@ end
 -- set key-val and ttl if key is exists (update)
 function _M.setx(self, key, val, ttl, modified_index)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
     attr.prev_exist = true
-    attr.prev_index = modified_index
+    attr.prev_index = tointeger(modified_index)
 
     return set(self, key, val, attr)
 end
@@ -437,7 +452,7 @@ end
 -- dir
 function _M.mkdir(self, key, ttl)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
     attr.dir = true
 
     return set(self, key, nil, attr)
@@ -446,7 +461,7 @@ end
 -- mkdir if not exists
 function _M.mkdirnx(self, key, ttl)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
     attr.dir = true
     attr.prev_exist = false
 
@@ -456,7 +471,7 @@ end
 -- in-order keys
 function _M.push(self, key, val, ttl)
     clear_tab(attr)
-    attr.ttl = ttl
+    attr.ttl = tointeger(ttl)
     attr.in_order = true
 
     return set(self, key, val, attr)
@@ -470,7 +485,7 @@ do
 function _M.delete(self, key, prev_val, modified_index)
     clear_tab(attr)
     attr.prev_value = prev_val
-    attr.prev_index = modified_index
+    attr.prev_index = tointeger(modified_index)
 
     return delete(self, key, attr)
 end
